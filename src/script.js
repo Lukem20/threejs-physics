@@ -11,25 +11,66 @@ import {
     PerspectiveCamera,
     WebGLRenderer,
     PCFSoftShadowMap,
-    Clock
+    Clock,
+    BoxGeometry
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import CANNON from 'cannon';
 
 /**
- * Debug panel
+ * ---------- Debug panel ----------
  */
 const gui = new GUI();
+const debugObject = {};
+
+debugObject.createSphere = () => {
+    createSphere(Math.random() * 0.5,
+    { 
+        x: (Math.random() -0.5) *3, 
+        y: 3, 
+        z: (Math.random() -0.5) *3 
+    });
+}
+
+debugObject.createBox = () => {
+    createBox(
+        Math.random(),
+        Math.random(), 
+        Math.random(),
+    { 
+        x: (Math.random() -0.5) *3, 
+        y: 3, 
+        z: (Math.random() -0.5) *3 
+    });
+}
+
+gui.add(debugObject, 'createSphere');
+gui.add(debugObject, 'createBox');
+
 
 /**
- * Base scene
+ * ---------- Base scene ----------
  */
 const canvas = document.querySelector('canvas.webgl');
 const scene = new Scene();
 
 /**
- * Textures
+ * ---------- Sounds ----------
+ */
+const hitSound = new Audio('/sounds/hit.mp3');
+
+const playHitSound = (collision) => {
+    const impactStrength = collision.contact.getImpactVelocityAlongNormal();
+
+    if (impactStrength > 1.5) {
+        hitSound.currentTime = 0;
+        hitSound.play();
+    }
+}
+
+/**
+ * ---------- Textures ----------
  */
 const textureLoader = new TextureLoader();
 const cubeTextureLoader = new CubeTextureLoader();
@@ -42,9 +83,8 @@ const environmentMapTexture = cubeTextureLoader.load([
     '/textures/environmentMaps/0/nz.png'
 ]);
 
-
 /**
- * Floor
+ * ---------- Floor ----------
  */
 const floor = new Mesh(
     new PlaneGeometry(10, 10),
@@ -62,11 +102,10 @@ floor.rotation.x = - Math.PI * 0.5;
 scene.add(floor);
 
 /**
- * Lights
+ * ---------- Lights ----------
  */
 const ambientLight = new AmbientLight(0xffffff, 2.1);
 const directionalLight = new DirectionalLight(0xffffff, 0.6);
-
 directionalLight.castShadow = true;
 directionalLight.shadow.mapSize.set(1024, 1024);
 directionalLight.shadow.camera.far = 15;
@@ -79,7 +118,7 @@ directionalLight.position.set(5, 5, 5);
 scene.add(ambientLight, directionalLight);
 
 /**
- * Screen sizes
+ * ---------- Screen sizes ----------
  */
 const sizes = {
     width: window.innerWidth,
@@ -101,10 +140,12 @@ window.addEventListener('resize', () => {
 });
 
 /**
- * Physics
+ * ---------- Physics ----------
  */
 // Start with creating a "physics world" representation
 const world = new CANNON.World();
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.allowSleep = true;
 world.gravity.set(0, -9.82, 0);
 
 // Create contact materials for objects with physics
@@ -132,7 +173,7 @@ floorBody.addShape(floorShape);
 world.addBody(floorBody);
 
 /**
- * Camera
+ * ---------- Camera ----------
  */
 const camera = new PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100);
 camera.position.set(- 3, 3, 3);
@@ -142,7 +183,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 
 /**
- * Renderer
+ * ---------- Renderer ----------
  */
 const renderer = new WebGLRenderer({
     canvas: canvas
@@ -153,28 +194,34 @@ renderer.setSize(sizes.width, sizes.height);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 /**
- * Utils
+ * ---------- Utils ----------
  */
 const objectsToUpdate = [];
 
-const createSphere = (radius, position) => {
-    const mesh = new Mesh(
-        new SphereGeometry(radius, 20, 20),
-        new MeshStandardMaterial({
-            metalness: 0.3,
-            roughness: 0.4,
-            envMap: environmentMapTexture
-        })
-    );
+// Sphere
+const sphereGeometry = new SphereGeometry(1, 20, 20);
+const sphereMaterial = new MeshStandardMaterial({
+    metalness: 0.3,
+    roughness: 0.4,
+    envMap: environmentMapTexture
+});
 
+const createSphere = (radius, position) => {
+    // Three.js Sphere Mesh
+    const mesh = new Mesh(
+        sphereGeometry,
+        sphereMaterial
+    );
+    mesh.scale.set(radius, radius, radius);
     mesh.castShadow = true;
     mesh.position.copy(position);
     scene.add(mesh);
 
+    // Cannon.js Sphere body
     const shape = new CANNON.Sphere(radius);
     const body = new CANNON.Body({
         mass: 1,
-        position: new CANNON.Vec3( 0 , 3, 0),
+        position: new CANNON.Vec3(0 ,3, 0),
         shape,
         material: defaultMaterial
     });
@@ -189,12 +236,49 @@ const createSphere = (radius, position) => {
     });
 }
 createSphere(0.5, { x: 0, y: 3, z: 0 });
-createSphere(0.5, { x: 2, y: 3, z: 0 });
-createSphere(0.5, { x: 0, y: 3, z: 2 });
 
+// Box
+const boxGeometry = new BoxGeometry(1, 1, 1);
+const boxMaterial = new MeshStandardMaterial({
+    metalness: 0.3,
+    roughness: 0.4,
+    envMap: environmentMapTexture
+});
+
+const createBox = (width, height, depth, position) => {
+    // Three.js Box Mesh
+    const mesh = new Mesh(
+        boxGeometry,
+        boxMaterial
+    );
+    mesh.scale.set(width, height, depth);
+    mesh.castShadow = true;
+    mesh.position.copy(position);
+    scene.add(mesh);
+
+    // Cannon.js Box Body
+    const shape = new CANNON.Box(new CANNON.Vec3(width * 0.5, height * 0.5, depth * 0.5));
+    const body = new CANNON.Body({
+        mass: 1,
+        position: new CANNON.Vec3(0, 3, 0),
+        shape,
+        material: defaultMaterial
+    });
+
+    body.position.copy(position);
+    body.addEventListener('collide', playHitSound);
+    world.addBody(body);
+
+    // Save object to update
+    objectsToUpdate.push({
+        mesh,
+        body,
+    });
+}
+createBox(1, 1, 1, { x: 1, y: 3, z: -2 });
 
 /**
- * Animate
+ * ---------- Animate ----------
  */
 const clock = new Clock();
 let oldElapsedTime  = 0;
@@ -210,6 +294,8 @@ const tick = () => {
 
     for(const object of objectsToUpdate) {
         object.mesh.position.copy(object.body.position);
+        object.mesh.quaternion.copy(object.body.quaternion);
+
     }
 
     controls.update();
